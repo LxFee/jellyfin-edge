@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "5ed3af2c-a62a-4fc1-b470-cefa5820ac92",
+    "name": "Jellyfin Edge",
+    "category": "General",
+    "overview": "Edge node control plane",
+    "description": "Registered proxy nodes, media caches and scoped share/download/stream links.",
+    "owner": "LxFee",
+    "versions": [
+      {
+        "version": "2.0.0.0",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/LxFee/jellyfin-edge/releases/download/v2.0.0.0/Jellyfin.Edge_2.0.0.0.zip",
+        "checksum": "82c26d9c39f260a90aca605d2d589f89",
+        "timestamp": "2026-10-06T14:47:26Z",
+        "changelog": "Plugin-managed HTTP block cache and scoped original/HLS exports for Jellyfin 12.2."
+      }
+    ]
+  }
+]
