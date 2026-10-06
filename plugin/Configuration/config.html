@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html><head><title>Jellyfin Edge</title></head><body>
+<div id="edgeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
+<div data-role="content"><div class="content-primary">
+<style>
+#edgeConfigPage .content-primary, #edgeConfigPage form, #edgeNodes { min-width: 0; max-width: 100%; box-sizing: border-box; }
+#edgeConfigPage fieldset { min-inline-size: 0; min-width: 0; max-width: 100%; box-sizing: border-box; margin: 1em 0; padding: 1em; border: 1px solid #888; border-radius: .3em; }
+#edgeConfigPage legend { max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+#edgeConfigPage p, #edgeStatus { overflow-wrap: anywhere; }
+#edgeConfigPage .edge-input-row { min-width: 0; margin-bottom: 1em; }
+#edgeConfigPage .edge-input-row .inputLabel { display: block; margin-bottom: .4em; }
+#edgeConfigPage .edge-input-row input[type=text] { display: block; width: 100%; min-width: 0; box-sizing: border-box; }
+#edgeConfigPage .edge-actions { display: flex; flex-wrap: wrap; gap: .5em; margin-top: 1em; }
+#edgeConfigPage .edge-actions button { margin: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+#edgeConfigPage .edge-export-toolbar, #edgeConfigPage .edge-export-pagination { align-items: center; }
+#edgeConfigPage .edge-export-toolbar .checkboxContainer, #edgeConfigPage .edge-export-row .checkboxContainer { margin: 0; }
+#edgeConfigPage .edge-export-row .checkboxContainer { flex: 0 0 auto; width: auto; }
+#edgeConfigPage .edge-export-row { display: flex; align-items: center; flex-wrap: wrap; gap: .75em; padding: .8em 0; border-bottom: 1px solid #555; }
+#edgeConfigPage .edge-export-info { flex: 1; min-width: 10em; overflow-wrap: anywhere; }
+#edgeConfigPage .edge-export-meta { font-size: .9em; opacity: .8; margin-top: .35em; }
+#edgeConfigPage .edge-export-pagination .selectContainer { min-width: 8em; margin: 0; }
+#edgeStatus { white-space: pre-wrap; }
+</style>
+<h1>Jellyfin Edge 节点管理</h1>
+<p>原文件直接播放和下载使用节点分块缓存；普通播放转码仅转发。分享点播由主站转码及烘焙字幕，节点缓存 HLS 分片。</p>
+<p>代理只需注册。发现节点后配置公开 URL、缓存容量并启用；从主站生成链接时使用默认节点，从代理访问时使用当前节点。</p>
+<fieldset><legend>Runner 自动注册</legend><p>新代理使用主站地址和注册 token 主动注册。节点默认禁用，配置后启用。轮换注册 token 不影响已注册节点。</p>
+<p id="edgeEnrollmentInfo">注册 token 状态加载中</p><div id="edgeEnrollmentSecret"></div>
+<div class="edge-actions"><button is="emby-button" type="button" id="edgeEnrollmentRotate" class="raised">生成 / 轮换注册 token</button><button is="emby-button" type="button" id="edgeRefresh" class="raised">刷新发现与状态</button></div></fieldset>
+<form id="edgeForm"><fieldset><legend>导出链接与分享默认值</legend><div id="edgeDefaults"></div></fieldset><div id="edgeNodes"></div>
+<div class="edge-actions"><button is="emby-button" type="submit" class="raised button-submit">保存配置</button></div></form>
+<pre id="edgeStatus" role="status" style="white-space:pre-wrap"></pre>
+<fieldset><legend>已生成链接</legend><p>撤销会在节点下一次检查授权或同步配置时生效；主站离线期间节点只能使用最后确认的授权。</p>
+<div class="edge-actions edge-export-toolbar">
+<label class="checkboxContainer"><input is="emby-checkbox" type="checkbox" id="edgeExportSelectPage"><span class="checkboxLabel">全选本页有效链接</span></label>
+<button is="emby-button" type="button" id="edgeExportRevokeSelected" class="raised" disabled>撤销所选</button>
+<button is="emby-button" type="button" id="edgeExportClearSelected" class="raised" disabled>取消选择</button>
+<span id="edgeExportSelection" role="status" aria-live="polite">已选择 0 条，可跨页选择</span>
+</div>
+<p id="edgeExportStatus" role="status" aria-live="polite"></p>
+<div id="edgeExports"></div>
+<div class="edge-actions edge-export-pagination">
+<div class="selectContainer"><select is="emby-select" id="edgeExportPageSize" label="每页条数"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></div>
+<button is="emby-button" type="button" id="edgeExportPrevious" class="raised" disabled>上一页</button>
+<span id="edgeExportPageInfo" role="status" aria-live="polite">加载中</span>
+<button is="emby-button" type="button" id="edgeExportNext" class="raised" disabled>下一页</button>
+</div></fieldset>
+</div></div>
+<script>
+(function () {
+    var page = document.querySelector('#edgeConfigPage');
+    var pluginId = '5ed3af2c-a62a-4fc1-b470-cefa5820ac92';
+    var config;
+    var dirty = false;
+    var nodeStatus = {};
+    var poll;
+    var exportPage = 1;
+    var exportPageSize = 20;
+    var exportTotal = 0;
+    var exportItems = [];
+    var exportRequest = 0;
+    var exportLoading = false;
+    var exportBusy = false;
+    var selectedExports = new Set();
+    function value(doc, key) { return doc[key] === undefined ? doc[key[0].toLowerCase() + key.slice(1)] : doc[key]; }
+    function exportId(record) { return value(record, 'Id'); }
+    function selectable(record) {
+        var expires = value(record, 'ExpiresAt');
+        return !value(record, 'Revoked') && (!expires || Date.parse(expires) > Date.now());
+    }
+    function refreshExportControls() {
+        var available = exportItems.filter(selectable);
+        var chosen = available.filter(function (r) { return selectedExports.has(exportId(r)); }).length;
+        var all = page.querySelector('#edgeExportSelectPage');
+        all.checked = available.length > 0 && chosen === available.length;
+        all.indeterminate = chosen > 0 && chosen < available.length;
+        all.disabled = exportBusy || exportLoading || available.length === 0;
+        page.querySelector('#edgeExportSelection').textContent = '已选择 ' + selectedExports.size + ' 条，可跨页选择';
+        page.querySelector('#edgeExportRevokeSelected').disabled = exportBusy || selectedExports.size === 0;
+        page.querySelector('#edgeExportClearSelected').disabled = exportBusy || selectedExports.size === 0;
+        page.querySelector('#edgeExportPrevious').disabled = exportBusy || exportLoading || exportPage <= 1;
+        page.querySelector('#edgeExportNext').disabled = exportBusy || exportLoading || exportPage * exportPageSize >= exportTotal;
+        page.querySelector('#edgeExportPageSize').disabled = exportBusy || exportLoading;
+        page.querySelectorAll('[data-export-id]').forEach(function (field) {
+            var record = exportItems.find(function (r) { return exportId(r) === field.dataset.exportId; });
+            field.checked = selectedExports.has(field.dataset.exportId);
+            field.disabled = exportBusy || !record || !selectable(record);
+        });
+        page.querySelectorAll('[data-export-revoke]').forEach(function (b) { b.disabled = exportBusy; });
+    }
+    function renderExports() {
+        var holder = page.querySelector('#edgeExports'); holder.replaceChildren();
+        if (exportTotal === 0) el('p', '暂无已生成链接。', holder);
+        exportItems.forEach(function (r) {
+            var id = exportId(r);
+            var active = selectable(r);
+            if (!active) selectedExports.delete(id);
+            var row = document.createElement('div'); row.className = 'edge-export-row'; row.dataset.testid = 'edge-export-row';
+            var label = el('label', null, row); label.className = 'checkboxContainer';
+            var check = document.createElement('input'); check.type = 'checkbox'; check.setAttribute('is', 'emby-checkbox');
+            check.dataset.exportId = id; check.setAttribute('aria-label', '选择链接 ' + id); label.appendChild(check);
+            el('span', null, label).className = 'checkboxLabel';
+            check.onchange = function () { if (check.checked) selectedExports.add(id); else selectedExports.delete(id); refreshExportControls(); };
+            var info = el('div', null, row); info.className = 'edge-export-info';
+            var operation = value(r, 'Operation');
+            var state = value(r, 'Revoked') ? '已撤销' : active ? '有效' : '已过期';
+            el('div', ({ share: '分享点播', download: '下载', stream: '原片串流' }[operation] || operation) + ' · ' + state + ' · ' + id, info);
+            var expires = value(r, 'ExpiresAt');
+            el('div', '创建：' + new Date(value(r, 'CreatedAt')).toLocaleString() + ' · 到期：' + (expires ? new Date(expires).toLocaleString() : '不过期'), info).className = 'edge-export-meta';
+            if (active) button(row, '撤销链接', function () { revokeExports([id], false); }).dataset.exportRevoke = id;
+            holder.appendChild(row);
+        });
+        page.querySelector('#edgeExportPageInfo').textContent = '共 ' + exportTotal + ' 条 · 第 ' + exportPage + ' / ' + Math.max(1, Math.ceil(exportTotal / exportPageSize)) + ' 页';
+        refreshExportControls();
+    }
+    function loadExports(force) {
+        if (exportBusy && !force) return Promise.resolve();
+        var request = ++exportRequest;
+        exportLoading = true; refreshExportControls();
+        return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEdge/admin/exports', { page: exportPage, pageSize: exportPageSize }), dataType: 'json' }).then(function (result) {
+            if (request !== exportRequest) return;
+            exportPage = value(result, 'Page'); exportPageSize = value(result, 'PageSize');
+            exportTotal = value(result, 'TotalCount'); exportItems = value(result, 'Items');
+            renderExports();
+        }).finally(function () { if (request === exportRequest) { exportLoading = false; refreshExportControls(); } });
+    }
+    function revokeExports(ids, confirm) {
+        if (exportBusy || ids.length === 0 || (confirm && !window.confirm('撤销所选的 ' + ids.length + ' 个链接？'))) return;
+        exportBusy = true; exportLoading = false; ++exportRequest; refreshExportControls();
+        ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEdge/admin/exports/revoke'), data: JSON.stringify({ Ids: ids }), contentType: 'application/json', dataType: 'json' }).then(function (result) {
+            ids.forEach(function (id) { selectedExports.delete(id); });
+            var message = page.querySelector('#edgeExportStatus');
+            message.textContent = '已撤销 ' + value(result, 'RevokedCount') + ' 条链接';
+            if (value(result, 'AlreadyRevokedCount')) message.textContent += '，' + value(result, 'AlreadyRevokedCount') + ' 条已撤销';
+            if (value(result, 'MissingCount')) message.textContent += '，' + value(result, 'MissingCount') + ' 条已不存在';
+            return loadExports(true);
+        }).catch(exportError).finally(function () { exportBusy = false; refreshExportControls(); });
+    }
+    function exportError(e) { page.querySelector('#edgeExportStatus').textContent = '操作失败：' + (e.message || e.statusText || e); }
+    function loadStatus() {
+        loadExports().catch(exportError);
+        return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEdge/admin/status'), dataType: 'json' }).then(function (r) {
+            var enrollment = r.Enrollment || r.enrollment;
+            page.querySelector('#edgeEnrollmentInfo').textContent = 'Fingerprint: ' + (enrollment.Fingerprint || enrollment.fingerprint || '未生成') + ' · 创建: ' + (enrollment.CreatedAt || enrollment.createdAt || '—') + ' · 心跳 TTL: 180 秒';
+            nodeStatus = {};
+            (r.Nodes || r.nodes || []).forEach(function (n) { nodeStatus[n.NodeId || n.nodeId] = n; });
+            page.querySelectorAll('[data-testid="edge-node-status"]').forEach(function (p) { p.textContent = statusText(nodeStatus[p.dataset.nodeId]); });
+        });
+    }
+    function statusText(n) {
+        if (!n) return '状态未知（尚未读取心跳）';
+        return '状态: ' + (n.State || n.state) + ' · 最近心跳: ' + (n.RecentSeen || n.recentSeen || '从未') + '\\n版本: ' + (n.Version || n.version || '—') + ' · 缓存 / 媒体状态: ' + (n.MediaReadability || n.mediaReadability) + '\\n配置已应用 revision: ' + (n.ConfigAppliedRevision || n.configAppliedRevision || '—') + '\\n错误码: ' + (n.ErrorCode || n.errorCode || '无');
+    }
+    function reload() {
+        if (dirty) { status.textContent = '请先保存配置，避免覆盖未保存编辑'; return Promise.resolve(); }
+        return ApiClient.getPluginConfiguration(pluginId).then(function (c) { config = c; config.Nodes = c.Nodes || []; render(); return loadStatus(); });
+    }
+    var status = page.querySelector('#edgeStatus');
+    function error(e) { status.textContent = '操作失败：' + (e.message || e.statusText || e); Dashboard.hideLoadingMsg(); }
+    function admin(path) {
+        return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEdge/' + path), dataType: 'json' });
+    }
+    function el(tag, text, parent) {
+        var element = document.createElement(tag);
+        if (text) element.textContent = text;
+        parent.appendChild(element); return element;
+    }
+    function input(parent, title, value, setter, checkbox) {
+        // Build the complete native template off-document before v0 upgrade.
+        // emby-input creates its own label; pre-setting its class skips initialization
+        // and leaves attachedCallback's labelElement undefined (htmlFor TypeError).
+        var row = document.createElement('div');
+        row.className = checkbox ? 'checkboxContainer edge-input-row' : 'inputContainer edge-input-row';
+        var holder = checkbox ? el('label', null, row) : row;
+        var field = document.createElement('input');
+        field.type = checkbox ? 'checkbox' : 'text';
+        field.setAttribute('is', checkbox ? 'emby-checkbox' : 'emby-input');
+        holder.appendChild(field);
+        if (checkbox) { field.checked = value === true; el('span', title, holder).className = 'checkboxLabel'; }
+        else { field.setAttribute('label', title); field.value = value == null ? '' : value; }
+        parent.appendChild(row);
+        field.addEventListener(checkbox ? 'change' : 'input', function () { setter(checkbox ? field.checked : field.value); dirty = true; status.textContent = '有未保存配置，请点击保存配置。'; });
+        return field;
+    }
+    function button(parent, title, handler) {
+        var b = document.createElement('button'); b.textContent = title; parent.appendChild(b);
+        b.type = 'button'; b.className = 'raised emby-button'; b.setAttribute('is', 'emby-button'); b.onclick = handler;
+        return b;
+    }
+    function render() {
+        var defaults = page.querySelector('#edgeDefaults'); defaults.replaceChildren();
+        function select(title, key, choices) {
+            var row = el('div', null, defaults); el('label', title, row);
+            var field = el('select', null, row);
+            choices.forEach(function (choice) { var option = el('option', choice[1], field); option.value = choice[0]; });
+            field.value = config[key] == null ? choices[0][0] : config[key];
+            field.onchange = function () { config[key] = field.value; dirty = true; };
+        }
+        select('主站访问的默认代理', 'DefaultNodeId', [['00000000-0000-0000-0000-000000000000', '请选择节点']].concat(config.Nodes.map(function (n) { return [n.NodeId, n.Name]; })));
+        select('分享输出', 'ShareMode', [['hls', 'HLS 转码与字幕烘焙'], ['original', '原文件']]);
+        select('视频编码', 'VideoCodec', [['h264', 'H.264'], ['hevc', 'HEVC']]);
+        [['LinkLifetimeDays', '链接有效天数（0 表示不过期）', 7, 0, 36500], ['MaxHeight', '最高视频高度', 1080, 144, 4320], ['VideoBitRate', '视频码率（bit/s）', 8000000, 100000, 200000000], ['AudioBitRate', '音频码率（bit/s）', 192000, 32000, 512000]].forEach(function (spec) {
+            var field = input(defaults, spec[1], config[spec[0]] == null ? spec[2] : config[spec[0]], function (v) { config[spec[0]] = Number(v); });
+            field.type = 'number'; field.required = true; field.min = spec[3]; field.max = spec[4];
+        });
+        input(defaults, '无详情页选择时沿用用户默认字幕', config.UseDefaultSubtitles !== false, function (v) { config.UseDefaultSubtitles = v; }, true);
+        var list = page.querySelector('#edgeNodes'); list.replaceChildren();
+        config.Nodes.forEach(function (node, index) {
+            var section = el('fieldset', null, list);
+            section.dataset.testid = 'edge-node'; section.dataset.nodeId = node.NodeId; section.dataset.nodeIndex = index;
+            el('legend', 'NodeId: ' + node.NodeId, section);
+            var health = el('pre', statusText(nodeStatus[node.NodeId]), section); health.dataset.testid = 'edge-node-status'; health.dataset.nodeId = node.NodeId; health.style.whiteSpace = 'pre-wrap'; health.style.overflowWrap = 'anywhere';
+            input(section, '名称', node.Name, function (v) { node.Name = v; });
+            input(section, '启用（管理员明确授权）', node.Enabled, function (v) { node.Enabled = v; }, true);
+            node.EnableLocalDirectPlay = false; node.Mappings = [];
+            input(section, '代理公开 URL', node.PublicUrl, function (v) { node.PublicUrl = v.trim(); });
+            input(section, '启用媒体缓存', node.EnableCache !== false, function (v) { node.EnableCache = v; }, true);
+            var capacity = input(section, '缓存容量（GiB）', (node.CacheMaxBytes || 53687091200) / 1073741824, function (v) { node.CacheMaxBytes = Math.round(Number(v) * 1073741824); });
+            capacity.type = 'number'; capacity.min = 0.01; capacity.step = 0.01; capacity.required = true;
+            var block = input(section, '原文件块大小（KiB）', (node.CacheBlockBytes || 2097152) / 1024, function (v) { node.CacheBlockBytes = Number(v) * 1024; });
+            block.type = 'number'; block.min = 64; block.max = 16384; block.required = true;
+            node.AllowOriginFallback = true;
+            var trust = input(section, 'TrustProxyHeaders（默认关闭）', node.TrustProxyHeaders === true, function (v) { node.TrustProxyHeaders = v; }, true);
+            trust.dataset.testid = 'edge-trust-proxy-headers'; trust.dataset.field = 'TrustProxyHeaders'; trust.setAttribute('is', 'emby-checkbox');
+            el('p', '仅当外网只能经 Traefik 到达网关且 Traefik 清理 X-Forwarded-For 时开启：取有效链最左 IP；关闭使用 socket peer。此开关不修改主站 KnownProxies，主站仍须独立配置。', section);
+            var actions = el('div', null, section); actions.className = 'edge-actions';
+            button(actions, '清空缓存', function () { admin('admin/nodes/' + node.NodeId + '/clear-cache').then(function (r) { node.CacheEpoch = r.CacheEpoch || r.cacheEpoch; status.textContent = '清空指令已保存，等待节点同步。'; }).catch(error); });
+            button(actions, '安全轮换节点凭据', function () {
+                admin('admin/nodes/' + node.NodeId + '/rotate-credential').then(function () { status.textContent = '等待节点持久保存新凭据后确认；旧凭据在确认前继续有效。只读 Secret 旧模式需要迁移到可写状态后才能确认。'; }).catch(error);
+            });
+            button(actions, '注销凭据 / 未使用配对码', function () {
+                admin('admin/nodes/' + node.NodeId + '/revoke').then(function () { status.textContent = '节点凭据和未使用配对码已注销'; }).catch(error);
+            });
+            button(actions, '删除节点（保存后注销）', function () { config.Nodes.splice(index, 1); dirty = true; render(); });
+        });
+        status.textContent = dirty ? '有未保存配置，请点击保存配置。' : '配置已加载。注册节点后刷新发现，编辑配置并保存。';
+    }
+    page.addEventListener('pageshow', function () {
+        Dashboard.showLoadingMsg(); status.textContent = '';
+        ApiClient.getPluginConfiguration(pluginId).then(function (c) { config = c; config.Nodes = c.Nodes || []; dirty = false; render(); Dashboard.hideLoadingMsg(); }).catch(error);
+    });
+    page.querySelector('#edgeEnrollmentRotate').onclick = function () {
+        if (!window.confirm('生成或轮换共享注册 token？旧注册 token 将不能加入新节点，现有节点不受影响。')) return;
+        admin('admin/enrollment-token/rotate').then(function (r) {
+            var holder = page.querySelector('#edgeEnrollmentSecret'); holder.replaceChildren();
+            var secret = input(holder, '注册 token（仅本次显示，离开页面清除）', r.Token || r.token, function () {});
+            secret.type = 'password'; secret.readOnly = true; secret.autocomplete = 'off'; secret.dataset.testid = 'edge-enrollment-token';
+            button(holder, '复制注册 token', function () { navigator.clipboard.writeText(secret.value).then(function () { status.textContent = '已复制，请通过可信通道保存'; }).catch(error); });
+            status.textContent = '注册 token 已轮换，旧 token 已失效；现有节点凭据不变。'; loadStatus().catch(error);
+        }).catch(error);
+    };
+    page.querySelector('#edgeRefresh').onclick = function () { reload().catch(error); };
+    page.querySelector('#edgeExportSelectPage').onchange = function (e) {
+        exportItems.filter(selectable).forEach(function (r) { if (e.target.checked) selectedExports.add(exportId(r)); else selectedExports.delete(exportId(r)); });
+        refreshExportControls();
+    };
+    page.querySelector('#edgeExportRevokeSelected').onclick = function () { revokeExports(Array.from(selectedExports), true); };
+    page.querySelector('#edgeExportClearSelected').onclick = function () { selectedExports.clear(); refreshExportControls(); };
+    page.querySelector('#edgeExportPrevious').onclick = function () { exportPage--; loadExports().catch(exportError); };
+    page.querySelector('#edgeExportNext').onclick = function () { exportPage++; loadExports().catch(exportError); };
+    page.querySelector('#edgeExportPageSize').onchange = function (e) { exportPageSize = Number(e.target.value); exportPage = 1; loadExports().catch(exportError); };
+    page.addEventListener('pageshow', function () { loadStatus().catch(error); poll = setInterval(function () {
+        loadStatus().catch(error);
+        if (!dirty && config) ApiClient.getPluginConfiguration(pluginId).then(function (c) {
+            if (!dirty && JSON.stringify((c.Nodes || []).map(function (n) { return n.NodeId; })) !== JSON.stringify(config.Nodes.map(function (n) { return n.NodeId; }))) { config = c; render(); loadStatus().catch(error); }
+        }).catch(error);
+    }, 15000); });
+    page.addEventListener('pagehide', function () { status.textContent = ''; page.querySelector('#edgeEnrollmentSecret').replaceChildren(); clearInterval(poll); ++exportRequest; exportLoading = false; selectedExports.clear(); });
+    page.querySelector('#edgeForm').onsubmit = function (e) {
+        e.preventDefault();
+        Dashboard.showLoadingMsg();
+        ApiClient.updatePluginConfiguration(pluginId, config).then(function () { dirty = false; status.textContent = '配置已保存'; Dashboard.hideLoadingMsg(); }).catch(error);
+    };
+})();
+</script></div></body></html>

@@ -1,0 +1,96 @@
+name: Test and publish
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jellyfin-edge-publish-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jellyfin/jellyfin
+          ref: ca0f16eb7c195f720a1493ed469a27c4657db0c6
+          path: jellyfin
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test plugin and gateway
+        run: |
+          python -m pip install -r edge/requirements.txt -r edge/requirements-dev.txt -r tests-edge-integration/requirements.txt
+          python -m pytest -q edge
+          python -m unittest discover -s plugin/tests -p test_external_web.py
+          dotnet build plugin/Jellyfin.Plugin.Edge.csproj -c Release -p:ContinuousIntegrationBuild=true
+          dotnet run --project plugin/tests/Edge.Tests.csproj -c Release
+          mkdir -p plugin/artifacts
+          cp plugin/bin/Release/net10.0/Jellyfin.Plugin.Edge.dll plugin/artifacts/
+      - name: Build images
+        run: |
+          docker build -f plugin/Dockerfile.host -t jellyfin-edge-host:test .
+          docker build -f edge/Dockerfile -t jellyfin-edge-gateway:test .
+      - name: Test isolated host and gateway
+        run: python tests-edge-integration/run.py --host-image jellyfin-edge-host:test --gateway-image jellyfin-edge-gateway:test
+      - name: Package release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python scripts/release.py --repo "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME"
+      - name: Login to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested images
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          version="${GITHUB_REF_NAME#v}"
+          for component in host gateway; do
+            for tag in "$version" "$GITHUB_SHA" latest; do
+              image="ghcr.io/$owner/jellyfin-edge-$component:$tag"
+              docker tag "jellyfin-edge-$component:test" "$image"
+              docker push "$image"
+            done
+          done
+      - name: Publish plugin Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Jellyfin Edge ${GITHUB_REF_NAME#v}" --notes-file docs/release-notes.md artifacts/release/Jellyfin.Edge_*.zip artifacts/release/SHA256SUMS artifacts/release/manifest.json
+      - name: Update plugin repository
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          catalog="$RUNNER_TEMP/edge-catalog"
+          previous="$RUNNER_TEMP/previous-manifest.json"
+          remote="$(git ls-remote --heads origin plugin-repository)"
+          if [ -n "$remote" ]; then
+            git fetch origin plugin-repository:refs/remotes/origin/plugin-repository
+            git worktree add --detach "$catalog" origin/plugin-repository
+            cp "$catalog/manifest.json" "$previous"
+            python scripts/release.py --repo "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --previous "$previous"
+          else
+            git worktree add --detach "$catalog" HEAD
+            git -C "$catalog" switch --orphan plugin-repository
+          fi
+          cp artifacts/release/manifest.json "$catalog/manifest.json"
+          git -C "$catalog" config user.name 'github-actions[bot]'
+          git -C "$catalog" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$catalog" add manifest.json
+          git -C "$catalog" commit -m "Publish $GITHUB_REF_NAME plugin catalog"
+          git -C "$catalog" push origin HEAD:plugin-repository

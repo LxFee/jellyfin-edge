@@ -1,0 +1,27 @@
+name: jellyfin-edge
+services:
+  host:
+    image: ghcr.io/lxfee/jellyfin-edge-host:2.0.0.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:8096:8096"]
+    volumes:
+      - host-config:/config
+      - host-cache:/cache
+      - ${MEDIA_DIR:?Set MEDIA_DIR to your media directory}:/media:ro
+  gateway:
+    image: ghcr.io/lxfee/jellyfin-edge-gateway:2.0.0.0
+    user: "10001:10001"
+    restart: unless-stopped
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      JELLYFIN_BACKEND: http://host:8096
+      EDGE_NODE_NAME: edge-demo
+      EDGE_ENROLLMENT_TOKEN_FILE: /run/edge/enrollment
+      EDGE_STATE_FILE: /var/lib/edge/node.json
+      EDGE_CACHE_DIR: /var/lib/edge/cache
+    volumes:
+      - ${EDGE_ENROLLMENT_FILE:?Set EDGE_ENROLLMENT_FILE}:/run/edge/enrollment:ro
+      - ${EDGE_STATE_DIR:?Set EDGE_STATE_DIR}:/var/lib/edge
+volumes:
+  host-config:
+  host-cache:

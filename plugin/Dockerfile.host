@@ -1,0 +1,16 @@
+# Build context: repository root; build the Edge DLL before building this image.
+FROM docker.io/jellyfin/jellyfin:12.2@sha256:da3cd1e48322a35e4b60f3d0a49fca2649e7acce90346dd6e42db777f94e3bbd
+LABEL org.opencontainers.image.source="https://github.com/LxFee/jellyfin-edge"
+COPY plugin/artifacts/Jellyfin.Plugin.Edge.dll plugin/manifest.json /opt/jellyfin-edge/plugin/
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/jellyfin-edge/
+# Python's URL parser and filesystem APIs keep validation/copy failures explicit.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY plugin/host-entrypoint.sh /usr/local/bin/jellyfin-edge-host
+COPY plugin/prepare-external-web.py /usr/local/lib/jellyfin-edge/prepare-external-web.py
+RUN sed -i 's/\r$//' /usr/local/bin/jellyfin-edge-host \
+    && chmod 755 /usr/local/bin/jellyfin-edge-host
+# The official image ENTRYPOINT is /jellyfin/jellyfin, not a shell init hook.
+# Initialize AFTER /config mount is present, then preserve all server arguments.
+ENTRYPOINT ["/usr/local/bin/jellyfin-edge-host"]

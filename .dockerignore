@@ -1,0 +1,17 @@
+**
+!plugin/
+!plugin/artifacts/
+!plugin/artifacts/Jellyfin.Plugin.Edge.dll
+!plugin/manifest.json
+!plugin/host-entrypoint.sh
+!plugin/prepare-external-web.py
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!edge/
+!edge/requirements.txt
+!edge/gateway.py
+!edge/control.py
+!edge/pair.py
+!edge/runner.py
+!edge/cache.py
+!edge/media.py

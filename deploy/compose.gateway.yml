@@ -1,0 +1,16 @@
+name: jellyfin-edge-gateway
+services:
+  gateway:
+    image: ghcr.io/lxfee/jellyfin-edge-gateway:2.0.0.0
+    user: "10001:10001"
+    restart: unless-stopped
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      JELLYFIN_BACKEND: ${JELLYFIN_BACKEND:?Set the main Jellyfin URL}
+      EDGE_NODE_NAME: ${EDGE_NODE_NAME:-edge-node}
+      EDGE_ENROLLMENT_TOKEN_FILE: /run/edge/enrollment
+      EDGE_STATE_FILE: /var/lib/edge/node.json
+      EDGE_CACHE_DIR: /var/lib/edge/cache
+    volumes:
+      - ${EDGE_ENROLLMENT_FILE:?Set EDGE_ENROLLMENT_FILE}:/run/edge/enrollment:ro
+      - ${EDGE_STATE_DIR:?Set EDGE_STATE_DIR}:/var/lib/edge
