@@ -61,8 +61,9 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           version="${GITHUB_REF_NAME#v}"
           for component in host gateway; do
+            if [ "$component" = host ]; then package=server; else package=proxy; fi
             for tag in "$version" "$GITHUB_SHA" latest; do
-              image="ghcr.io/$owner/jellyfin-edge-$component:$tag"
+              image="ghcr.io/$owner/jellyfin-edge-$package:$tag"
               docker tag "jellyfin-edge-$component:test" "$image"
               docker push "$image"
             done

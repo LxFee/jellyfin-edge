@@ -30,12 +30,12 @@ flowchart LR
 
 1. Jellyfin 后台进入“插件 → 仓库”，添加 [Jellyfin Edge 插件目录](https://raw.githubusercontent.com/LxFee/jellyfin-edge/plugin-repository/manifest.json)，然后在插件目录安装并重启。也可从 [Releases](https://github.com/LxFee/jellyfin-edge/releases) 下载 ZIP 手动安装。
 2. 在插件配置页生成注册 token，将它保存为代理节点的私有文件。
-3. 使用 [GHCR 代理镜像](https://github.com/LxFee/jellyfin-edge/pkgs/container/jellyfin-edge-gateway) 部署节点，填写主站地址、注册文件和持久状态目录。
+3. 使用 [GHCR 代理镜像](https://github.com/LxFee/jellyfin-edge/pkgs/container/jellyfin-edge-proxy) 部署节点，填写主站地址、注册文件和持久状态目录。
 4. 刷新节点列表，填写节点公开 URL、缓存容量，启用节点并设置默认节点。
 
 ![插件设置和节点配置](docs/images/settings-overview.png)
 
-已有 Jellyfin 可以只安装插件；新部署也可使用 [GHCR 主站镜像](https://github.com/LxFee/jellyfin-edge/pkgs/container/jellyfin-edge-host)，其中包含 Edge 插件。版本镜像与 Release 同步发布，部署示例见 [部署指南](docs/setup.md)，字段含义见 [插件设置说明](docs/plugin-settings.md)。
+已有 Jellyfin 可以只安装插件；新部署也可使用 [GHCR 主站镜像](https://github.com/LxFee/jellyfin-edge/pkgs/container/jellyfin-edge-server)，其中包含 Edge 插件。版本镜像与 Release 同步发布，部署示例见 [部署指南](docs/setup.md)，字段含义见 [插件设置说明](docs/plugin-settings.md)。
 
 ## 兼容范围
 

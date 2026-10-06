@@ -21,7 +21,7 @@ python -m unittest discover -s plugin/tests -p test_external_web.py
 GitHub Actions 在测试、构建镜像与隔离 HTTP 集成检查通过后发布：
 
 - GitHub Release：插件 ZIP、`SHA256SUMS`、该版本目录记录。
-- GHCR：`jellyfin-edge-host` 与 `jellyfin-edge-gateway`，标签包括四段版本、完整提交和 `latest`。
+- GHCR：`jellyfin-edge-server` 与 `jellyfin-edge-proxy`，标签包括四段版本、完整提交和 `latest`。
 - `plugin-repository` 分支：插件目录，保留已发布版本，使用实际 ZIP 的 MD5 与固定下载 URL。
 
 MD5 用于 Jellyfin 安装器协议校验，SHA256SUMS 用于独立下载核对。发布使用 Actions 的 `GITHUB_TOKEN`，不需要在源码中设置发布密钥。首次发布后须确认两个 GHCR 包的可见性为 Public，支持匿名拉取。
