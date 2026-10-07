@@ -30,11 +30,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Test plugin and gateway
         run: |
           python -m pip install -r edge/requirements.txt -r edge/requirements-dev.txt -r tests-edge-integration/requirements.txt
           python -m pytest -q edge
           python -m unittest discover -s plugin/tests -p test_external_web.py
+          node --test plugin/tests/test_web_routing.cjs
           dotnet build plugin/Jellyfin.Plugin.Edge.csproj -c Release -p:ContinuousIntegrationBuild=true
           dotnet run --project plugin/tests/Edge.Tests.csproj -c Release
           mkdir -p plugin/artifacts

@@ -10,7 +10,7 @@
 https://raw.githubusercontent.com/LxFee/jellyfin-edge/plugin-repository/manifest.json
 ```
 
-进入插件目录，安装 Jellyfin Edge 后重启。手动安装时，从 [Release](https://github.com/LxFee/jellyfin-edge/releases) 下载 `Jellyfin.Edge_2.0.0.0.zip`，核对同页 `SHA256SUMS`，解压到主站数据目录的 `plugins/Jellyfin Edge_2.0.0.0/`，然后重启。手动升级移走旧版 Edge DLL，保留 `plugins/configurations/` 中配置和私有状态。
+进入插件目录，安装 Jellyfin Edge 后重启。手动安装时，从 [Release](https://github.com/LxFee/jellyfin-edge/releases) 下载 `Jellyfin.Edge_2.0.0.1.zip`，核对同页 `SHA256SUMS`，解压到主站数据目录的 `plugins/Jellyfin Edge_2.0.0.1/`，然后重启。手动升级移走旧版 Edge DLL，保留 `plugins/configurations/` 中配置和私有状态。
 
 ![添加插件仓库](images/install-repository.png)
 

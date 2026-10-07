@@ -1,13 +1,13 @@
 {
   "category": "General",
-  "changelog": "Plugin-managed HTTP block cache and scoped original/HLS exports for Jellyfin 12.2.",
+  "changelog": "Keep native downloads and stream URLs on direct host access; proxy access and shared links use Edge.",
   "description": "Registered proxy nodes, media caches and scoped share/download/stream links.",
   "guid": "5ed3af2c-a62a-4fc1-b470-cefa5820ac92",
   "name": "Jellyfin Edge",
   "overview": "Edge node control plane",
   "owner": "LxFee",
   "targetAbi": "12.2.0.0",
-  "version": "2.0.0.0",
+  "version": "2.0.0.1",
   "status": "Active",
   "autoUpdate": true
 }

@@ -63,6 +63,7 @@ try:
     token=auth['AccessToken']
     client.headers['Authorization']=authorization+', Token="'+token+'"'
     check('Edge plugin loaded in official Jellyfin',any(p['Id'].replace('-','')==PID.replace('-','') for p in api('GET','/Plugins')))
+    check('direct host context keeps native downloads',api('GET','/JellyfinEdge/context')['FromProxy'] is False)
     docker('exec',host,'mkdir','-p','/release-media')
     docker('exec',host,'/usr/lib/jellyfin-ffmpeg/ffmpeg','-hide_banner','-loglevel','error','-y','-f','lavfi','-i','testsrc2=size=320x180:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','8','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','/release-media/Edge Demo (2026).mp4')
     api('POST','/Library/VirtualFolders',params={'name':'Release synthetic','collectionType':'movies','refreshLibrary':'true'},json={'LibraryOptions':{'PathInfos':[{'Path':'/release-media'}],'EnableInternetProviders':False,'EnableRealtimeMonitor':False,'TypeOptions':[{'Type':'Movie','MetadataFetchers':[],'ImageFetchers':[]}]}})
@@ -94,6 +95,8 @@ try:
     docker('exec','-d',gateway,'uvicorn','gateway:from_env','--factory','--host','0.0.0.0','--port','8080','--no-access-log','--no-proxy-headers','--log-level','critical')
     wait(lambda: client.get(edge+'/edge-status').json().get('ControlReady') is True)
     check('registered node applies HTTP cache configuration',True)
+    proxy_context=client.get(edge+'/JellyfinEdge/context')
+    check('proxy context is established by registered node identity',proxy_context.status_code==200 and proxy_context.json()['FromProxy'] is True)
     original=client.get(origin+'/Items/'+item['Id']+'/Download')
     check('official original download succeeds',original.status_code==200 and len(original.content)>0)
     cold=client.get(edge+'/Items/'+item['Id']+'/Download')

@@ -65,7 +65,7 @@ public sealed class MediaController(ILibraryManager library, IUserManager users,
         Response.Headers.CacheControl = "private, no-store";
         var node = Node();
         if (Request.Headers.ContainsKey("X-Jellyfin-Edge-Node") && node is null) return Unauthorized();
-        return Ok(new { NodeId = node?.NodeId ?? Plugin.Configuration.DefaultNodeId, Available = Plugin.Configuration.Nodes.Any(n => n.Enabled && n.PublicUrl.Length > 0), WebVersion = "12.2" });
+        return Ok(new { FromProxy = node is not null, NodeId = node?.NodeId ?? Plugin.Configuration.DefaultNodeId, Available = Plugin.Configuration.Nodes.Any(n => n.Enabled && n.PublicUrl.Length > 0), WebVersion = "12.2" });
     }
     [HttpGet("node/files/{itemId:guid}")]
     [Authorize]

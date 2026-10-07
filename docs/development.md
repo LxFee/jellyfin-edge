@@ -10,6 +10,7 @@ dotnet run --project plugin/tests/Edge.Tests.csproj -c Release
 python -m pip install -r edge/requirements.txt -r edge/requirements-dev.txt
 python -m pytest -q edge
 python -m unittest discover -s plugin/tests -p test_external_web.py
+node --test plugin/tests/test_web_routing.cjs
 ```
 
 插件 ZIP 只包含 Edge DLL 与许可说明，不分发 Jellyfin 主站程序集、PDB、账号配置或节点凭证。两个镜像使用仓库根目录作为构建上下文，分别指定 `plugin/Dockerfile.host` 和 `edge/Dockerfile`；构建白名单只包含代码、插件与许可说明。

@@ -1,7 +1,7 @@
 name: jellyfin-edge-gateway
 services:
   gateway:
-    image: ghcr.io/lxfee/jellyfin-edge-proxy:2.0.0.0
+    image: ghcr.io/lxfee/jellyfin-edge-proxy:2.0.0.1
     user: "10001:10001"
     restart: unless-stopped
     ports: ["127.0.0.1:8080:8080"]

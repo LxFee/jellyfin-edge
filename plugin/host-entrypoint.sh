@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-plugin_dir="${JELLYFIN_DATA_DIR:-/config}/plugins/Jellyfin.Edge_2.0.0.0"
+plugin_dir="${JELLYFIN_DATA_DIR:-/config}/plugins/Jellyfin.Edge_2.0.0.1"
 mkdir -p "$plugin_dir"
 cp /opt/jellyfin-edge/plugin/Jellyfin.Plugin.Edge.dll "$plugin_dir/"
 # Preserve enable/disable state managed by Jellyfin on subsequent restarts.

@@ -3,12 +3,40 @@
     'use strict';
     if (window.JellyfinEdge) return;
     let current = null;
+    let accessRequest = null;
+    let accessCheckedAt = 0;
+    let fromProxy;
     function api() {
         const client = window.ApiClient;
         if (!client) throw new Error('Jellyfin API 尚未准备好');
         return client;
     }
     function value(doc, key) { return doc[key] === undefined ? doc[key[0].toLowerCase() + key.slice(1)] : doc[key]; }
+    function access() {
+        if (accessRequest && Date.now() - accessCheckedAt < 3000) return accessRequest;
+        accessCheckedAt = Date.now();
+        fromProxy = undefined;
+        accessRequest = api().ajax({ type: 'GET', url: api().getUrl('JellyfinEdge/context'), dataType: 'json' }).then(result => {
+            const mode = value(result, 'FromProxy');
+            if (typeof mode !== 'boolean') throw new Error('入口状态不可用，请刷新网页');
+            fromProxy = mode;
+            return mode;
+        }).catch(error => { accessRequest = null; throw error; });
+        return accessRequest;
+    }
+    function activate(event, button, context, operation) {
+        // Keep Jellyfin's own version selection, authentication and download URL
+        // when the request reached the host directly. Sharing always uses Edge.
+        if (operation !== 'share' && fromProxy === false && Date.now() - accessCheckedAt < 3000) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        const action = operation === 'share' ? create(context, operation) : access().then(proxy => {
+            if (proxy) return create(context, operation);
+            // The original click was held while the authenticated route resolved.
+            // Replay it once; the cached direct result lets native handlers run.
+            if (button.isConnected) button.click();
+        });
+        action.catch(() => notify('操作失败：请刷新页面并检查播放/下载权限和代理节点状态。'));
+    }
     function notify(message) {
         let box = document.getElementById('jellyfin-edge-message');
         if (!box) {
@@ -60,10 +88,14 @@
             const params = new URLSearchParams(location.hash.split('?')[1] || location.search);
             const itemId = params.get('id');
             if (itemId) current = { itemId, detail: page, seen: Date.now() };
+            try { access().catch(() => {}); } catch (_) { /* API may still be loading. */ }
             return;
         }
         const card = event.target.closest('.card[data-id], .listItem[data-id], [data-itemid]');
-        if (card) current = { itemId: card.dataset.id || card.dataset.itemid, seen: Date.now() };
+        if (card) {
+            current = { itemId: card.dataset.id || card.dataset.itemid, seen: Date.now() };
+            try { access().catch(() => {}); } catch (_) { /* API may still be loading. */ }
+        }
     }
     document.addEventListener('pointerdown', capture, true);
     document.addEventListener('contextmenu', capture, true);
@@ -78,8 +110,7 @@
             const button = event.target.closest('[data-edge-operation], [data-id="download"], [data-id="copy-stream"]');
             if (!button) return;
             const operation = button.dataset.edgeOperation || (button.dataset.id === 'download' ? 'download' : 'stream');
-            event.preventDefault(); event.stopImmediatePropagation();
-            create(context, operation).catch(() => notify('生成失败：请检查播放/下载权限、默认节点和节点状态。'));
+            activate(event, button, context, operation);
         }, true);
         let client;
         try { client = api(); } catch (_) { return; }
@@ -96,7 +127,7 @@
             const text = document.createElement('div'); text.className = 'listItemBodyText actionSheetItemText';
             text.textContent = '复制分享点播链接'; body.appendChild(text); share.append(icon, body);
             first.parentNode.insertBefore(share, first);
-            // Use capture handlers so native code cannot export its account-bearing URL.
+            // Proxy actions use scoped exports; direct actions keep native URLs.
             for (const button of sheet.querySelectorAll('[data-id="download"], [data-id="copy-stream"]')) {
                 button.dataset.edgeOperation = button.dataset.id === 'download' ? 'download' : 'stream';
             }
@@ -107,8 +138,7 @@
     document.addEventListener('click', event => {
         const button = event.target instanceof Element && event.target.closest('.btnDownload');
         if (!button || !current || !current.detail) return;
-        event.preventDefault(); event.stopImmediatePropagation();
-        create({ ...current }, 'download').catch(() => notify('生成下载链接失败，请检查下载权限和代理节点。'));
+        activate(event, button, { ...current }, 'download');
     }, true);
     window.JellyfinEdge = Object.freeze({ create, selections });
 })();

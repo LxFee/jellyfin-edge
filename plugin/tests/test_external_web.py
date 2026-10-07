@@ -75,7 +75,7 @@ class ExternalWebTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(r.stdout.splitlines(), ['--foo', 'two words', '--webdir', '/original'])
             self.assertFalse((root / 'cache').exists())
-            manifest = root / 'data/plugins/Jellyfin.Edge_2.0.0.0/manifest.json'
+            manifest = root / 'data/plugins/Jellyfin.Edge_2.0.0.1/manifest.json'
             manifest.write_text('disabled')
             env['JELLYFIN_EXTERNAL_SCRIPT_URL'] = URL
             for _ in range(2):
