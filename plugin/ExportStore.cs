@@ -119,9 +119,12 @@ public sealed record FileIdentity(string Path, long Size, long ModifiedTicks, st
     public static FileIdentity Read(string path, string sourceNamespace)
     {
         var file = new FileInfo(path);
-        if (!file.Exists || (file.Attributes & FileAttributes.Directory) != 0) throw new FileNotFoundException();
-        var version = new { Schema = 1, Namespace = sourceNamespace, Path = file.FullName, Size = file.Length, ModifiedTicks = file.LastWriteTimeUtc.Ticks };
-        return new(file.FullName, file.Length, file.LastWriteTimeUtc.Ticks, ExportStore.Hash(JsonSerializer.Serialize(version)), MediaBrowser.Model.Net.MimeTypes.GetMimeType(path), file.Name);
+        var target = file.LinkTarget is null ? file : file.ResolveLinkTarget(returnFinalTarget: true) as FileInfo;
+        if (target is null || !target.Exists || (target.Attributes & FileAttributes.Directory) != 0) throw new FileNotFoundException();
+        // Linux reports a link's own length/mtime. Version the final media target,
+        // but retain the library path and name for authorization and presentation.
+        var version = new { Schema = 1, Namespace = sourceNamespace, Path = target.FullName, Size = target.Length, ModifiedTicks = target.LastWriteTimeUtc.Ticks };
+        return new(file.FullName, target.Length, target.LastWriteTimeUtc.Ticks, ExportStore.Hash(JsonSerializer.Serialize(version)), MediaBrowser.Model.Net.MimeTypes.GetMimeType(path), file.Name);
     }
 }
 public sealed class OutputSelection
