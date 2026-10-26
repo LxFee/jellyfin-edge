@@ -67,6 +67,41 @@ try
     Check(identity.CacheKey != FileIdentity.Read(media, "main-two").CacheKey, "file identities include main namespace");
     File.AppendAllText(media, "changed");
     Check(identity.CacheKey != FileIdentity.Read(media, "main-one").CacheKey, "file size/modification changes version");
+    if (!OperatingSystem.IsWindows())
+    {
+        var objects = Path.Combine(directory, "objects");
+        Directory.CreateDirectory(objects);
+        var content = Path.Combine(objects, "content");
+        File.WriteAllText(content, "target video bytes");
+        File.SetLastWriteTimeUtc(content, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var link = Path.Combine(directory, "Library Video.mp4");
+        File.CreateSymbolicLink(link, Path.Combine("objects", "content"));
+        var linked = FileIdentity.Read(link, "main-one");
+        Check(linked.Size == new FileInfo(content).Length && linked.ModifiedTicks == File.GetLastWriteTimeUtc(content).Ticks, "symlink uses target size and modification time");
+        Check(linked.Path == link && linked.FileName == "Library Video.mp4" && linked.ContentType == "video/mp4", "symlink preserves library path, download name and media type");
+        Check(linked.CacheKey == FileIdentity.Read(content, "main-one").CacheKey, "symlink versions the resolved media target");
+        var chain = Path.Combine(directory, "Chained Video.mp4");
+        File.CreateSymbolicLink(chain, Path.GetFileName(link));
+        Check(FileIdentity.Read(chain, "main-one").CacheKey == linked.CacheKey, "relative symlink chains resolve to the final file");
+        File.SetLastWriteTimeUtc(content, File.GetLastWriteTimeUtc(content).AddSeconds(5));
+        Check(FileIdentity.Read(link, "main-one").CacheKey != linked.CacheKey, "target changes invalidate symlink cache identity");
+        var replacementContent = Path.Combine(objects, "replacement");
+        File.Copy(content, replacementContent);
+        File.SetLastWriteTimeUtc(replacementContent, File.GetLastWriteTimeUtc(content));
+        var beforeRetarget = FileIdentity.Read(link, "main-one");
+        File.Delete(link);
+        File.CreateSymbolicLink(link, Path.Combine("objects", "replacement"));
+        Check(FileIdentity.Read(link, "main-one").CacheKey != beforeRetarget.CacheKey, "retargeting invalidates identity even with equal size and modification time");
+        var broken = Path.Combine(directory, "Broken.mp4");
+        File.CreateSymbolicLink(broken, "missing-target");
+        var folder = Path.Combine(directory, "Directory.mp4");
+        Directory.CreateSymbolicLink(folder, objects);
+        foreach (var invalid in new[] { broken, folder })
+        {
+            try { FileIdentity.Read(invalid, "main-one"); throw new Exception("invalid media link accepted"); }
+            catch (IOException) { Console.WriteLine("PASS broken or directory media link rejected"); }
+        }
+    }
     var exports = new ExportStore(Path.Combine(directory, "exports.json"), () => now);
     var exported = exports.Create(new ExportRecord { NodeId = id, File = identity, Operation = "share", Output = new OutputSelection { SubtitleIndex = -1 } }, 7);
     Check(exported.Record.ExpiresAt == now.AddDays(7), "export default expiry is seven days");
