@@ -8,6 +8,14 @@
     "owner": "LxFee",
     "versions": [
       {
+        "version": "2.0.0.2",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/LxFee/jellyfin-edge/releases/download/v2.0.0.2/Jellyfin.Edge_2.0.0.2.zip",
+        "checksum": "a604a50c5b87a965260a061b3a9a7bb4",
+        "timestamp": "2026-10-26T04:14:26Z",
+        "changelog": "Resolve symbolic-link media targets for file size, modification time and cache identity; preserve library filenames and media types for playback, downloads and shared streams."
+      },
+      {
         "version": "2.0.0.1",
         "targetAbi": "12.2.0.0",
         "sourceUrl": "https://github.com/LxFee/jellyfin-edge/releases/download/v2.0.0.1/Jellyfin.Edge_2.0.0.1.zip",
